@@ -1,0 +1,9 @@
+# SDK oficial do Model Context Protocol (MCP) para Python.
+# Usamos a API FastMCP (v1), ainda a mais comum em tutoriais e cursos.
+mcp>=1.2.0,<2
+
+# Leitura tabular do Excel e agrupamento por categoria.
+pandas>=2.2.0
+
+# Motor usado pelo pandas para abrir arquivos .xlsx.
+openpyxl>=3.1.0
