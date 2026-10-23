@@ -9,6 +9,7 @@ expor a Tool de listagem por categoria.
 
 from __future__ import annotations
 
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
@@ -37,9 +38,24 @@ COLUNAS_PRODUTO = [
 ]
 
 
+def _normalizar_texto(valor: str) -> str:
+    """Compara textos sem maiúsculas, espaços extras nem acentos."""
+    sem_acento = "".join(
+        ch
+        for ch in unicodedata.normalize("NFKD", str(valor).strip().lower())
+        if not unicodedata.combining(ch)
+    )
+    return " ".join(sem_acento.split())
+
+
 def _normalizar_categoria(valor: str) -> str:
     """Compara categorias sem se preocupar com maiúsculas ou espaços extras."""
-    return str(valor).strip().lower()
+    return _normalizar_texto(valor)
+
+
+def _normalizar_id(valor: str) -> str:
+    """IDs como P001 e p001 devem ser tratados como o mesmo produto."""
+    return str(valor).strip().upper()
 
 
 def _consertar_texto(valor):
@@ -114,6 +130,7 @@ def carregar_catalogo() -> pd.DataFrame:
             categoria_produto=("categoria_produto", "first"),
             preco_medio=("preco", "mean"),
             avaliacao_media=("avaliacao_produto", "mean"),
+            quantidade_avaliacoes=("avaliacao_produto", "count"),
         )
         .sort_values(["categoria_produto", "id_produto"])
         .reset_index(drop=True)
@@ -122,6 +139,7 @@ def carregar_catalogo() -> pd.DataFrame:
     # Arredonda para leitura humana na resposta da Tool.
     catalogo["preco_medio"] = catalogo["preco_medio"].round(2)
     catalogo["avaliacao_media"] = catalogo["avaliacao_media"].round(1)
+    catalogo["quantidade_avaliacoes"] = catalogo["quantidade_avaliacoes"].astype(int)
     return catalogo
 
 
@@ -173,4 +191,177 @@ def listar_produtos_por_categoria(categoria: str | None = None) -> dict:
         "total_categorias": len(agrupado),
         "categorias_disponiveis": categorias_validas,
         "produtos_por_categoria": agrupado,
+    }
+
+
+def _linha_produto(linha: pd.Series) -> dict:
+    """Converte uma linha do catálogo no dicionário padrão das Tools."""
+    return {
+        "id_produto": linha["id_produto"],
+        "nome_produto": linha["nome_produto"],
+        "descricao_produto": linha["descricao_produto"],
+        "categoria_produto": linha["categoria_produto"],
+        "preco": float(linha["preco_medio"]) if pd.notna(linha["preco_medio"]) else None,
+        "avaliacao_media": (
+            float(linha["avaliacao_media"]) if pd.notna(linha["avaliacao_media"]) else None
+        ),
+        "quantidade_avaliacoes": int(linha["quantidade_avaliacoes"]),
+    }
+
+
+def obter_produto_por_id(id_produto: str) -> dict:
+    """
+    Localiza um produto pelo ID (ex.: P009).
+
+    Devolve nome, categoria e valor (preço médio nos chamados).
+    """
+    chave = _normalizar_id(id_produto)
+    if not chave:
+        return {
+            "ok": False,
+            "mensagem": "Informe um id_produto, por exemplo P009.",
+            "produto": None,
+        }
+
+    catalogo = carregar_catalogo()
+    encontrados = catalogo[catalogo["id_produto"].map(_normalizar_id) == chave]
+    if encontrados.empty:
+        exemplos = ", ".join(catalogo["id_produto"].head(5).tolist())
+        return {
+            "ok": False,
+            "mensagem": (
+                f"Produto '{id_produto}' não encontrado. "
+                f"Exemplos de IDs válidos: {exemplos}."
+            ),
+            "produto": None,
+        }
+
+    linha = encontrados.iloc[0]
+    dados = _linha_produto(linha)
+    return {
+        "ok": True,
+        "produto": {
+            "id_produto": dados["id_produto"],
+            "nome": dados["nome_produto"],
+            "categoria": dados["categoria_produto"],
+            "valor": dados["preco"],
+            "descricao": dados["descricao_produto"],
+        },
+    }
+
+
+def buscar_produto_por_nome(nome: str) -> dict:
+    """
+    Busca produtos cujo nome contém o texto informado.
+
+    A comparação ignora maiúsculas e acentos: "cafe" encontra "Cafeteira".
+    """
+    termo = _normalizar_texto(nome)
+    if not termo:
+        return {
+            "ok": False,
+            "mensagem": "Informe um trecho do nome do produto, por exemplo 'headset'.",
+            "total": 0,
+            "produtos": [],
+        }
+
+    catalogo = carregar_catalogo()
+    nomes = catalogo["nome_produto"].map(_normalizar_texto)
+    encontrados = catalogo[nomes.str.contains(termo, regex=False)]
+
+    produtos = [_linha_produto(linha) for _, linha in encontrados.iterrows()]
+    if not produtos:
+        return {
+            "ok": False,
+            "mensagem": (
+                f"Nenhum produto encontrado para '{nome}'. "
+                "Tente um trecho menor, como 'mochila' ou 'batom'."
+            ),
+            "total": 0,
+            "produtos": [],
+        }
+
+    return {
+        "ok": True,
+        "total": len(produtos),
+        "termo_buscado": nome.strip(),
+        "produtos": produtos,
+    }
+
+
+def _resolver_produto(produto: str) -> pd.Series | None:
+    """Aceita ID (P009) ou nome (exato / contém um único resultado)."""
+    catalogo = carregar_catalogo()
+    chave_id = _normalizar_id(produto)
+    por_id = catalogo[catalogo["id_produto"].map(_normalizar_id) == chave_id]
+    if not por_id.empty:
+        return por_id.iloc[0]
+
+    termo = _normalizar_texto(produto)
+    if not termo:
+        return None
+    nomes = catalogo["nome_produto"].map(_normalizar_texto)
+    exatos = catalogo[nomes == termo]
+    if len(exatos) == 1:
+        return exatos.iloc[0]
+    parciais = catalogo[nomes.str.contains(termo, regex=False)]
+    if len(parciais) == 1:
+        return parciais.iloc[0]
+    return None
+
+
+def obter_avaliacao_produto(produto: str) -> dict:
+    """
+    Devolve a nota média de avaliação de um produto.
+
+    produto pode ser o ID (P009) ou um nome que identifique um único item.
+    A nota é a média da coluna avaliacao_produto nos chamados daquele produto.
+    """
+    if not str(produto).strip():
+        return {
+            "ok": False,
+            "mensagem": "Informe o produto pelo ID (P009) ou pelo nome.",
+            "avaliacao": None,
+        }
+
+    linha = _resolver_produto(produto)
+    if linha is None:
+        candidatos = buscar_produto_por_nome(produto)
+        if candidatos.get("ok") and candidatos["total"] > 1:
+            nomes = [
+                f"{p['id_produto']} ({p['nome_produto']})"
+                for p in candidatos["produtos"]
+            ]
+            return {
+                "ok": False,
+                "mensagem": (
+                    f"'{produto}' encontrou {candidatos['total']} produtos. "
+                    f"Seja mais específico ou use o ID: {', '.join(nomes)}."
+                ),
+                "avaliacao": None,
+            }
+        return {
+            "ok": False,
+            "mensagem": (
+                f"Produto '{produto}' não encontrado. "
+                "Use um ID como P009 ou um nome como 'Headset gamer'."
+            ),
+            "avaliacao": None,
+        }
+
+    dados = _linha_produto(linha)
+    nota = dados["avaliacao_media"]
+    return {
+        "ok": True,
+        "avaliacao": {
+            "id_produto": dados["id_produto"],
+            "nome": dados["nome_produto"],
+            "nota": nota,
+            "escala": "0 a 5",
+            "quantidade_avaliacoes": dados["quantidade_avaliacoes"],
+            "resumo": (
+                f"{dados['nome_produto']} tem nota {nota}/5 "
+                f"com base em {dados['quantidade_avaliacoes']} avaliações."
+            ),
+        },
     }

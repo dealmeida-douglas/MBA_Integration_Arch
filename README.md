@@ -14,7 +14,8 @@ deduplica por `id_produto` e agrupa por `categoria_produto`.
 2. **Montar um catalogo** — 33 produtos unicos em 5 categorias:
    `brinquedo`, `game`, `livro`, `maquiagem`, `outros`.
 3. **Criar o servidor MCP** — FastMCP registra Tools que um cliente de IA chama.
-4. **Expor a Tool** `listar_produtos_por_categoria` — com filtro opcional.
+4. **Expor Tools** de catálogo: listar por categoria, buscar por ID, buscar
+   por nome e obter a nota de avaliação.
 
 ## Estrutura
 
@@ -52,10 +53,12 @@ o Python do venv e o `server.py` (ajuste o caminho da sua maquina):
 
 Depois peca ao agente: *liste os produtos da categoria game*.
 
-## Chamada da Tool
+## Tools
 
-| Parametro   | Efeito                                      |
-|-------------|---------------------------------------------|
-| `""`        | Todas as categorias                         |
-| `"game"`    | So produtos da categoria game               |
-| `"xyz"`     | Erro amigavel com as categorias validas     |
+| Tool | Parametro | Efeito |
+|------|-----------|--------|
+| `listar_produtos_por_categoria` | `categoria` vazia | Todas as categorias |
+| `listar_produtos_por_categoria` | `"game"` | So a categoria game |
+| `obter_produto_por_id` | `"P009"` | Nome, categoria e valor |
+| `buscar_produto_por_nome` | `"headset"` | Produtos cujo nome contem o termo |
+| `obter_avaliacao_produto` | `"P009"` ou nome | Nota media (0 a 5) |

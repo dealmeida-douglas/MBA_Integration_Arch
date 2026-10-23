@@ -34,7 +34,12 @@ if str(_RAIZ_PROJETO) not in sys.path:
 
 from mcp.server.fastmcp import FastMCP
 
-from mcp_server.data_loader import listar_produtos_por_categoria as consultar_catalogo
+from mcp_server.data_loader import (
+    buscar_produto_por_nome as consultar_por_nome,
+    listar_produtos_por_categoria as consultar_catalogo,
+    obter_avaliacao_produto as consultar_avaliacao,
+    obter_produto_por_id as consultar_por_id,
+)
 
 # Logs no stderr: o stdout é o "fio" do protocolo MCP.
 logging.basicConfig(
@@ -68,6 +73,60 @@ def listar_produtos_por_categoria(categoria: str = "") -> dict:
     filtro = categoria.strip() or None
     logger.info("Tool listar_produtos_por_categoria chamada (categoria=%r)", filtro)
     return consultar_catalogo(filtro)
+
+
+@mcp.tool()
+def obter_produto_por_id(id_produto: str) -> dict:
+    """Busca um produto pelo ID e devolve nome, categoria e valor.
+
+    Use esta Tool quando o usuário já souber o código do produto (P001 a P033)
+    e quiser os dados de catálogo: nome, categoria e preço.
+
+    Args:
+        id_produto: Identificador do produto, por exemplo "P009".
+            Maiúsculas e minúsculas são ignoradas.
+
+    Returns:
+        Dicionário com ok e produto (id_produto, nome, categoria, valor, descricao).
+    """
+    logger.info("Tool obter_produto_por_id chamada (id_produto=%r)", id_produto)
+    return consultar_por_id(id_produto)
+
+
+@mcp.tool()
+def buscar_produto_por_nome(nome: str) -> dict:
+    """Busca produtos cujo nome contém o texto informado.
+
+    Use esta Tool quando o usuário lembrar só de parte do nome, como
+    "headset", "batom" ou "mochila". A busca ignora maiúsculas e acentos.
+
+    Args:
+        nome: Trecho do nome do produto (não precisa ser o nome completo).
+
+    Returns:
+        Dicionário com ok, total e a lista de produtos encontrados.
+    """
+    logger.info("Tool buscar_produto_por_nome chamada (nome=%r)", nome)
+    return consultar_por_nome(nome)
+
+
+@mcp.tool()
+def obter_avaliacao_produto(produto: str) -> dict:
+    """Devolve a nota média de avaliação/review de um produto.
+
+    Use esta Tool quando o usuário perguntar a nota, o review ou a avaliação
+    de um item. Informe o ID (P009) ou um nome que identifique um único produto.
+    A nota é a média da coluna avaliacao_produto nos chamados daquele item.
+
+    Args:
+        produto: ID (ex.: "P009") ou nome (ex.: "Headset gamer HX-70").
+
+    Returns:
+        Dicionário com ok e avaliacao (nota de 0 a 5, quantidade de avaliações
+        e um resumo em texto).
+    """
+    logger.info("Tool obter_avaliacao_produto chamada (produto=%r)", produto)
+    return consultar_avaliacao(produto)
 
 
 def main() -> None:
