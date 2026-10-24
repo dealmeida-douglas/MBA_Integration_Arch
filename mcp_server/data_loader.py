@@ -194,6 +194,29 @@ def listar_produtos_por_categoria(categoria: str | None = None) -> dict:
     }
 
 
+def exportar_catalogo_completo() -> dict:
+    """
+    Monta o documento da Resource catalogo://produtos.
+
+    É o catálogo inteiro (33 produtos únicos), sem filtro. O cliente MCP
+    lê esta Resource; não precisa informar parâmetro.
+    """
+    catalogo = carregar_catalogo()
+    produtos = [_linha_produto(linha) for _, linha in catalogo.iterrows()]
+    agrupado = listar_produtos_por_categoria()
+    return {
+        "fonte": "db_csv/quantum-commerce-chamados.xlsx",
+        "descricao": (
+            "Catálogo único extraído da planilha de chamados. "
+            "Cada produto aparece uma vez (deduplicado por id_produto)."
+        ),
+        "total_produtos": len(produtos),
+        "categorias_disponiveis": listar_categorias(),
+        "produtos": produtos,
+        "produtos_por_categoria": agrupado["produtos_por_categoria"],
+    }
+
+
 def _linha_produto(linha: pd.Series) -> dict:
     """Converte uma linha do catálogo no dicionário padrão das Tools."""
     return {

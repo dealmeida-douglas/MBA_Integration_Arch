@@ -18,10 +18,24 @@ Como registrar uma Tool?
 O decorator @mcp.tool() expõe a função Python. O docstring vira a descrição
 que o modelo lê para decidir quando chamar a Tool. Type hints viram o schema
 dos parâmetros.
+
+Como registrar uma Resource?
+----------------------------
+O decorator @mcp.resource("uri") expõe um documento só de leitura, identificado
+por uma URI. O cliente lista (resources/list) e lê (resources/read). Não há
+parâmetro de busca: o conteúdo já é o catálogo completo.
+
+Como registrar um Prompt?
+-------------------------
+O decorator @mcp.prompt() expõe um *template* de conversa. Diferente da Tool
+(que executa código e devolve dado) e da Resource (que entrega um documento),
+o Prompt devolve o texto de instrução que o cliente coloca no modelo. Serve
+para padronizar o jeito de usar as Tools e a Resource neste servidor.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -36,6 +50,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_server.data_loader import (
     buscar_produto_por_nome as consultar_por_nome,
+    exportar_catalogo_completo,
     listar_produtos_por_categoria as consultar_catalogo,
     obter_avaliacao_produto as consultar_avaliacao,
     obter_produto_por_id as consultar_por_id,
@@ -127,6 +142,49 @@ def obter_avaliacao_produto(produto: str) -> dict:
     """
     logger.info("Tool obter_avaliacao_produto chamada (produto=%r)", produto)
     return consultar_avaliacao(produto)
+
+
+@mcp.resource("catalogo://produtos")
+def catalogo_produtos() -> str:
+    """Catálogo completo de produtos do Quantum Commerce (somente leitura).
+
+    Use esta Resource quando precisar de todos os produtos de uma vez, sem
+    filtro. O conteúdo já vem pronto: produtos únicos extraídos da planilha
+    de chamados, em lista plana e agrupados por categoria.
+    """
+    logger.info("Resource catalogo://produtos lida")
+    return json.dumps(exportar_catalogo_completo(), ensure_ascii=False, indent=2)
+
+
+@mcp.prompt()
+def assistente_catalogo(pergunta: str = "") -> str:
+    """Prompt padrão do assistente de catálogo Quantum Commerce.
+
+    Use este Prompt no início do trabalho: ele instrui o modelo a consultar
+    a Resource e as Tools deste servidor em vez de inventar produtos, preços
+    ou avaliações. Opcionalmente informe a pergunta do usuário.
+    """
+    logger.info("Prompt assistente_catalogo solicitado (pergunta=%r)", pergunta)
+    extra = ""
+    if pergunta.strip():
+        extra = f"\nPergunta do usuário:\n{pergunta.strip()}\n"
+
+    return f"""Você é o assistente de catálogo da Quantum Commerce.
+
+Nunca invente produto, preço, categoria ou avaliação. Toda resposta deve
+vir das primitivas MCP deste servidor.
+
+Como consultar os dados:
+1. Visão geral do mix: leia a Resource catalogo://produtos.
+2. Filtro por categoria (brinquedo, game, livro, maquiagem, outros):
+   chame a Tool listar_produtos_por_categoria.
+3. Código conhecido (P001 a P033): chame a Tool obter_produto_por_id.
+4. Nome incompleto (ex.: headset, batom): chame a Tool buscar_produto_por_nome.
+5. Nota ou review: chame a Tool obter_avaliacao_produto.
+
+Responda em português. Cite id_produto, nome, categoria, preço e avaliação
+quando existirem. Se um item não estiver no catálogo, diga isso com clareza.
+{extra}"""
 
 
 def main() -> None:
